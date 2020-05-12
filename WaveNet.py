@@ -56,8 +56,7 @@ def WaveNet(length, initial_kernel = 32, kernel_size = 2, residual_channels = 32
   if use_glob_cond:
     glob_cond = tf.keras.Input((1,)); # glob_cond.shape = (batch, 1)
     glob_embed = tf.keras.layers.Embedding(glob_cls_num, glob_embed_dim)(glob_cond); # glob_embed.shape = (batch, glob_embed_dim)
-    glob_embed = tf.keras.layers.Reshape((1, glob_embed_dim))(glob_embed); # glob_embed.shape = (batch, 1, glob_embed_dim);
-
+    glob_embed = tf.keras.layers.Reshape((1, glob_embed_dim))(glob_embed); # glob_embed.shape = (batch, 1, glob_embed_dim)
   # 2_ create_network
   inputs = tf.keras.Input([length, 1]); # inputs.shape = (batch, length, 1)
   results = tf.keras.layers.Conv1D(filters = residual_channels, kernel_size = initial_kernel, padding = 'valid')(inputs); # results.shape = (batch, new_length, residual_channels)
@@ -80,8 +79,8 @@ def WaveNet(length, initial_kernel = 32, kernel_size = 2, residual_channels = 32
   transformed2 = tf.keras.layers.ReLU()(conv1);
   raw_output = tf.keras.layers.Dense(units = quantization_channels)(transformed2); # raw_output.shape = (batch, new_length, quantization_channels)
   # 3) output
-  out = tf.keras.layers.Softmax(axis = -1)(raw_output);
-  return tf.keras.Model(inputs = inputs, outputs = out);
+  outputs = tf.keras.layers.Softmax(axis = -1)(raw_output);
+  return tf.keras.Model(inputs = inputs, outputs = outputs);
 
 if __name__ == "__main__":
 
