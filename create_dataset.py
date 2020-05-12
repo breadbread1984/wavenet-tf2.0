@@ -23,7 +23,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3):
       audio = audio.reshape(-1, 1);
       # 2) load label file
       label_path = join(root_dir, 'txt', d, splitext(f)[0] + ".txt");
-      label = open(label, 'r');
+      label = open(label_path, 'r');
       if label is None:
         print("can't open label file!");
         continue;
