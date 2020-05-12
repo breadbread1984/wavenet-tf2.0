@@ -22,7 +22,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3):
       audio, _ = librosa.load(audio_path, sr = sample_rate, mono=True);
       audio = audio.reshape(-1, 1);
       # 2) load label file
-      label_path = join(root_dir, 'txt', d, splitext(f)[0] + ".txt"));
+      label_path = join(root_dir, 'txt', d, splitext(f)[0] + ".txt");
       label = open(label, 'r');
       if label is None:
         print("can't open label file!");
