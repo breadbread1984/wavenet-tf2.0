@@ -2,78 +2,90 @@
 
 import tensorflow as tf;
 
-def ResidualBlock(input_shape, global_condition_shape = None, local_condition_shape = None, filters = None, kernel_size = None, dilation_rate = None):
+class GCConv1D(tf.keras.layers.Layer):
 
-    tf.debugging.Assert(tf.equal(tf.shape(input_shape)[0], 2), [input_shape]);
-    if global_condition_shape is not None:
-        tf.debugging.Assert(tf.equal(tf.shape(global_condition_shape)[0], 1), [global_condition_shape]);
-    if local_condition_shape is not None:
-        tf.debugging.Assert(tf.equal(tf.shape(local_condition_shape)[0], 2), [local_condition_shape]);
-        tf.debugging.Assert(tf.equal(input_shape[0] % local_condition_shape[0],0), [input_shape, local_condition_shape])
-    assert filters is not None;
-    assert kernel_size is not None;
-    assert dilation_rate is not None;
-    # inputs.shape = (batch, length, input channel)
-    inputs = tf.keras.Input(input_shape);
-    if global_condition_shape is not None:
-        # global_condition.shape = (batch, global condition channel)
-        global_condition = tf.keras.Input(global_condition_shape);
-    if local_condition_shape is not None:
-        # local_condition.shape = (batch, subsampled length, local condition channel)
-        local_condition = tf.keras.Input(local_condition_shape);
-    residual = inputs;
-    # activation.shape = (batch, length, output channels = filters)
-    activation = tf.keras.layers.Conv1D(filters = filters, kernel_size = kernel_size, dilation_rate = dilation_rate, padding = 'same', activation = tf.math.tanh)(inputs);
-    # gate.shape = (batch, length, output channels = filters)
-    gate = tf.keras.layers.Conv1D(filters = filters, kernel_size = kernel_size, dilation_rate = dilation_rate, padding = 'same', activation = tf.math.sigmoid)(inputs);
-    if global_condition_shape is not None:
-        # global_activaiton control.shape = (batch, length, filters)
-        global_activation_control = tf.keras.layers.Dense(units = filters)(global_condition);
-        global_activation_control = tf.keras.layers.Lambda(lambda x, inputs: tf.tile(tf.expand_dims(x, 1), (1, inputs.shape[1], 1)), arguments = {'inputs': inputs})(global_activation_control);
-        # global_gate_control.shape = (batch, length, filters)
-        global_gate_control = tf.keras.layers.Dense(units = filters)(global_condition);
-        global_gate_control = tf.keras.layers.Lambda(lambda x, inputs: tf.tile(tf.expand_dims(x,1), (1, inputs.shape[1], 1)), arguments = {'inputs': inputs})(global_gate_control);
-        # add to activation and gate
-        activation = tf.keras.layers.Add()([activation, global_activation_control]);
-        gate = tf.keras.layers.Add()([gate, global_gate_control]);
-    if local_condition_shape is not None:
-        # local_activation_control.shape = (batch, length, filters)
-        local_activation_control = tf.keras.layers.Dense(units = filters)(local_condition);
-        local_activation_control = tf.keras.layers.Lambda(lambda x, inputs: tf.tile(x, (1, inputs.shape[1] // x.shape[1], 1)), arguments = {'inputs': inputs})(local_activation_control);
-        # local_gate_control.shape = (batch, length, filters)
-        local_gate_control = tf.keras.layers.Dense(units = filters)(local_condition);
-        local_gate_control = tf.keras.layers.Lambda(lambda x, inputs: tf.tile(x, (1, inputs.shape[1] // x.shape[1], 1)), arguments = {'inputs': inputs})(local_gate_control);
-        # add to activation and gate
-        activation = tf.keras.layers.Add()([activation, local_activation_control]);
-        gate = tf.keras.layers.Add()([gate, local_gate_control]);
+  def __init__(self, filters = 32, kernel_size = 2, use_bias = True, padding = 'valid', strides = 1, dilations = 1, activation = None):
+    
+    super(GCConv1D, self).__init__();
+    self.kernel_size = 2;
+    self.filters = filters;
+    self.use_bias = use_bias;
+    self.padding = padding;
+    self.strides = strides;
+    self.dilations = dilations;
+    self.activation = tf.math.tanh if activation == 'tanh' else (tf.math.sigmoid if activation == 'sigmoid' else (None if activation is None else -1));
+    if self.activation == -1:
+      raise "unknown activation";
+
+  def build(self, input_shape):
+
+    # input_shape[0] = (batch, length, 1)
+    # input_shape[1] = (batch, 1, glob_embed_dim)
+    weight_shape = tf.TensorShape((self.kernel_size, input_shape[0][-1], self.filters))
+    self.weight = self.add_weight(name = 'weight', shape = weight_shape, trainable = True);
+    if self.use_bias:
+      bias_shape = tf.TensorShape((self.filters,));
+      self.bias = self.add_weight(name = 'bias', shape = bias_shape, trainable = True);
+    # global condition kernel and bias weights
+    cond_weight_shape = tf.TensorShape((1, input_shape[1][-1], self.filters));
+    self.cond_weight = self.add_weight(name = 'cond_weight', shape = cond_weight_shape, trainable = True);
+    super(GCConv1D, self).build(input_shape);
+
+  def call(self, inputs):
+
+    conv_inputs = inputs[0];
+    cond_inputs = inputs[1];
+    outputs = tf.nn.conv1d(conv_inputs, self.weight, strides = self.strides, padding = self.padding, dilations = self.dilations);
+    outputs += tf.nn.conv1d(cond_inputs, self.cond_weight, strides = 1, padding = 'same');
+    if self.use_bias:
+      outputs += self.bias;
+    if self.activation is not None:
+      outputs = self.activation(outputs);
+    # outputs.shape = (batch, new_length, 32)
+    return outputs;
+
+def WaveNet(length, initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilation_channels = 32, skip_channels = 512, quantization_channels = 256, use_glob_cond = False, glob_cls_num = None, glob_embed_dim = None):
+
+  dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
+               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
+               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
+               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
+               1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
+
+  # 1) embed_gc
+  if use_glob_cond:
+    glob_cond = tf.keras.Input((1,)); # glob_cond.shape = (batch, 1)
+    glob_embed = tf.keras.layers.Embedding(glob_cls_num, glob_embed_dim)(glob_cond); # glob_embed.shape = (batch, glob_embed_dim)
+    glob_embed = tf.keras.layers.Reshape((1, glob_embed_dim))(glob_embed); # glob_embed.shape = (batch, 1, glob_embed_dim);
+
+  # 2_ create_network
+  inputs = tf.keras.Input([length, 1]); # inputs.shape = (batch, length, 1)
+  results = tf.keras.layers.Conv1D(filters = residual_channels, kernel_size = initial_kernel, padding = 'valid')(inputs); # results.shape = (batch, new_length, residual_channels)
+  outputs = list();
+  for layer_index, dilation in enumerate(dilations):
+    if use_glob_cond:
+      activation = GCConv1D(filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'tanh')([results, glob_embed]); # activation.shape = (batch, new_length, dilation_channels)
+      gate = GCConv1D(filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'sigmoid')([results, glob_embed]); # gate.shape = (batch, new_length, dilation_channels)
+    else:
+      activation = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'tanh', padding = 'same')(results);
+      gate = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'sigmoid', padding = 'same')(results);
     gated_activation = tf.keras.layers.Multiply()([activation, gate]);
-    filtered = tf.keras.layers.Conv1D(filters = 1, kernel_size = 1, padding = 'same', activation = tf.nn.relu)(gated_activation);
-    # results.shape = (batch, length, filters);
-    results = tf.keras.layers.Add()([filtered, residual]);
-    return tf.keras.Model(inputs = inputs, outputs = (results, filtered));
-
-def WaveNet(length, global_condition_shape = None, local_condition_shape = None):
-
-    inputs = tf.keras.Input([length, 1]);
-    # l1.shape = (batch, length, 10)
-    l1a, l1b = ResidualBlock(inputs.shape[1:], global_condition_shape, local_condition_shape, 10, 5, 2)(inputs);
-    # l2-l5.shape = (batch, length, 1)
-    l2a, l2b = ResidualBlock(l1a.shape[1:], global_condition_shape, local_condition_shape, 1, 2, 4)(l1a);
-    l3a, l3b = ResidualBlock(l2a.shape[1:], global_condition_shape, local_condition_shape, 1, 2, 8)(l2a);
-    l4a, l4b = ResidualBlock(l3a.shape[1:], global_condition_shape, local_condition_shape, 1, 2, 16)(l3a);
-    l5a, l5b = ResidualBlock(l4a.shape[1:], global_condition_shape, local_condition_shape, 1, 2, 32)(l4a);
-    # l6.shape = (batch, length, 1)
-    l6 = tf.keras.layers.Add()([l1b, l2b, l3b, l4b, l5b]);
-    l7 = tf.keras.layers.ReLU()(l6);
-    l8 = tf.keras.layers.Conv1D(filters = 1, kernel_size = 1, padding = 'same', activation = tf.nn.relu)(l7);
-    l9 = tf.keras.layers.Conv1D(filters = 1, kernel_size = 1, padding = 'same')(l8)
-    # l10.shape = (batch, length)
-    l10 = tf.keras.layers.Flatten()(l9);
-    l11 = tf.keras.layers.Dense(units = 1, activation = tf.math.tanh)(l10);
-    return tf.keras.Model(inputs = inputs, outputs = l11);
+    transformed = tf.keras.layers.Dense(units = residual_channels)(gated_activation); # transformed.shape = (batch, new_length, residual_channels)
+    skip_constribution = tf.keras.layers.Dense(units = skip_channels)(gated_activation); # skip_construction.shape = (batch, new_length, skip_channels)
+    outputs.append(skip_constribution);
+    results = tf.keras.layers.Add()([results, transformed]); # results.shape = (batch, new_length, residual_channels)
+  total = tf.keras.layers.Add()(outputs); # total.shape = (batch, new_length, skip_channels);
+  transformed1 = tf.keras.layers.ReLU()(total);
+  conv1 = tf.keras.layers.Dense(units = skip_channels)(transformed1); # conv1.shape = (batch, new_length, skip_channels)
+  transformed2 = tf.keras.layers.ReLU()(conv1);
+  raw_output = tf.keras.layers.Dense(units = quantization_channels)(transformed2); # raw_output.shape = (batch, new_length, quantization_channels)
+  # 3) output
+  out = tf.keras.layers.Softmax(axis = -1)(raw_output);
+  return tf.keras.Model(inputs = inputs, outputs = out);
 
 if __name__ == "__main__":
 
     assert tf.executing_eagerly();
     wavenet = WaveNet(100);
-
+    wavenet.save('wavenet.h5');
+    tf.keras.utils.plot_model(model = wavenet, to_file = 'wavenet.png', show_shapes = True, dpi = 64);
