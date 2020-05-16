@@ -13,9 +13,10 @@ class GCConv1D(tf.keras.layers.Layer):
     self.padding = padding.upper();
     self.stride = stride;
     self.dilation = dilation;
-    self.activation = tf.math.tanh if activation == 'tanh' else (tf.math.sigmoid if activation == 'sigmoid' else (None if activation is None else -1));
-    if self.activation == -1:
-      raise "unknown activation";
+    activation = activation.lower();
+    if activation is None: activation = 'identity';
+    assert activation in ['identity', 'tanh', 'sigmoid'];
+    self.activation = activation;
 
   def build(self, input_shape):
 
@@ -39,10 +40,30 @@ class GCConv1D(tf.keras.layers.Layer):
     outputs += tf.nn.conv1d(cond_inputs, self.cond_weight, stride = 1, padding = 'SAME');
     if self.use_bias:
       outputs += self.bias;
-    if self.activation is not None:
-      outputs = self.activation(outputs);
+    if self.activation == 'identity':
+      outputs = tf.identity(outputs);
+    elif self.activation == 'tanh':
+      outputs = tf.math.tanh(outputs);
+    else:
+      outputs = tf.math.sigmoid(outputs);
     # outputs.shape = (batch, new_length, 32)
     return outputs;
+
+  def get_config(self):
+
+    config = super(GCConv1D, self).get_config();
+    config['kernel_size'] = self.kernel_size;
+    config['filters'] = self.filters;
+    config['use_bias'] = self.use_bias;
+    config['padding'] = self.padding;
+    config['stride'] = self.stride;
+    config['dilation'] = self.dilation;
+    config['activation'] = self.activation;
+    return config;
+
+  @classmethod
+  def from_config(cls, config):
+    return cls(config['filters'], config['kernel_size'], config['use_bias'], config['padding'], config['stride'], config['dilation'], config['activation']);
 
 def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilation_channels = 32, skip_channels = 512, quantization_channels = 256, use_glob_cond = False, glob_cls_num = None, glob_embed_dim = None):
 
@@ -59,8 +80,8 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
   outputs = list();
   for layer_index, dilation in enumerate(dilations):
     if use_glob_cond:
-      activation = GCConv1D(filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'tanh')([results, glob_embed]); # activation.shape = (batch, new_length, dilation_channels)
-      gate = GCConv1D(filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'sigmoid')([results, glob_embed]); # gate.shape = (batch, new_length, dilation_channels)
+      activation = GCConv1D(filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'tanh', padding = 'same')([results, glob_embed]); # activation.shape = (batch, new_length, dilation_channels)
+      gate = GCConv1D(filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'sigmoid', padding = 'same')([results, glob_embed]); # gate.shape = (batch, new_length, dilation_channels)
     else:
       activation = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'tanh', padding = 'same')(results);
       gate = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'sigmoid', padding = 'same')(results);
@@ -88,7 +109,9 @@ if __name__ == "__main__":
     import numpy as np;
     inputs = tf.constant(np.random.randint(low = 0, high = 256, size = (32,100,1)), dtype = tf.float32);
     gc = tf.constant(np.random.randint(low = 0, high = 100, size = (32, 1)), tf.float32);
-    b = wavenet([inputs, gc]);
-    print(b.shape)
+    outputs = wavenet([inputs, gc]);
+    print(outputs.shape)
     wavenet.save('wavenet.h5');
     tf.keras.utils.plot_model(model = wavenet, to_file = 'wavenet.png', show_shapes = True, dpi = 64);
+    wavenet = tf.keras.models.load_model('wavenet.h5', compile = False, custom_objects = {'GCConv1D': GCConv1D});
+    outputs = wavenet([inputs, gc]);
