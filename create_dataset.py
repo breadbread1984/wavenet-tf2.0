@@ -58,8 +58,8 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
         count += 1;
       # 3) trim silence under specific signal to noise ratio
       frame_length = 2048 if audio.size >= 2048 else audio.size;
-      energe = librosa.feature.rmse(audio, frame_length = frame_length);
-      frames = np.nonzero(energe > threshold);
+      energe = librosa.feature.rms(audio, frame_length = frame_length);
+      frames = np.nonzero(energe > silence_threshold);
       indices = librosa.core.frames_to_samples(frames)[1];
       audio = audio[indices[0]:indices[-1]] if indices.size else audio[0:0];
       audio = audio.reshape(-1, 1);
