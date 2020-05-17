@@ -37,7 +37,6 @@ class GCConv1D(tf.keras.layers.Layer):
     conv_inputs = inputs[0];
     cond_inputs = inputs[1];
     outputs = tf.nn.conv1d(conv_inputs, self.weight, stride = self.stride, padding = self.padding, dilations = self.dilation);
-    outputs = outputs[:, :tf.shape(conv_inputs)[1] - (self.kernel_size - 1) * self.dilation, :];
     outputs += tf.nn.conv1d(cond_inputs, self.cond_weight, stride = 1, padding = 'SAME');
     if self.use_bias:
       outputs += self.bias;
@@ -83,7 +82,7 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
   inputs = tf.keras.Input((None, 1)); # inputs.shape = (batch, length, 1)
   output_width = tf.keras.layers.Lambda(lambda x, r: tf.shape(x)[1] - r + 1, arguments = {'r': calculate_receptive_field(dilations, kernel_size, initial_kernel)})(inputs);
   results = tf.keras.layers.Conv1D(filters = residual_channels, kernel_size = initial_kernel, padding = 'valid')(inputs); # results.shape = (batch, new_length, residual_channels)
-  current_layer = tf.keras.layers.Lambda(lambda x, k, d: x[0][:, :tf.shape(x[1])[1] - (k - 1) * d, :], arguments = {"k": initial_kernel, "d": 1})([results, inputs]);
+  current_layer = results;
   outputs = list();
   for layer_index, dilation in enumerate(dilations):
     if use_glob_cond:
@@ -91,9 +90,7 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
       gate = GCConv1D(filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'sigmoid', padding = 'valid')([current_layer, glob_embed]); # gate.shape = (batch, new_length, dilation_channels)
     else:
       activation = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'tanh', padding = 'valid')(current_layer);
-      activation = tf.keras.layers.Lambda(lambda x, k, d: x[0][:, :tf.shape(x[1])[1] - (k - 1) * d, :], arguments = {'k': kernel_size, 'd': dilation})([activation, current_layer]);
       gate = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'sigmoid', padding = 'valid')(current_layer);
-      gate = tf.keras.layers.Lambda(lambda x, k, d: x[0][:, :tf.shape(x[1])[1] - (k - 1) * d, :], arguments = {'k': kernel_size, 'd': dilation})([gate, current_layer]);
     gated_activation = tf.keras.layers.Multiply()([activation, gate]);
     transformed = tf.keras.layers.Dense(units = residual_channels)(gated_activation); # transformed.shape = (batch, new_length, residual_channels)
     out_skip = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - x[1]:, :])([gated_activation, output_width]);
