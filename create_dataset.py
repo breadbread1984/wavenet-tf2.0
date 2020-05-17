@@ -68,7 +68,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       # 5) quantization 
       quantized = mu_law_encode(audio, 256); # quantized.shape(length, 256)
       # 6) write to file
-      trainsample = tf.train.Example(features = tf.trainFeatures(
+      trainsample = tf.train.Example(features = tf.train.Features(
         feature = {
           'audio': tf.train.Feature(int64_list = tf.train.Int64List(value = quantized.reshape(-1))),
           'category': tf.train.Feature(int64_list = tf.train.Int64List(value = [category[person_id]])),
