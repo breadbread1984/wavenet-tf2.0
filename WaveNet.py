@@ -81,8 +81,7 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
   # 2) create_network
   inputs = tf.keras.Input((None, 1)); # inputs.shape = (batch, length, 1)
   output_width = tf.keras.layers.Lambda(lambda x, r: tf.shape(x)[1] - r + 1, arguments = {'r': calculate_receptive_field(dilations, kernel_size, initial_kernel)})(inputs);
-  results = tf.keras.layers.Conv1D(filters = residual_channels, kernel_size = initial_kernel, padding = 'valid')(inputs); # results.shape = (batch, new_length, residual_channels)
-  current_layer = results;
+  current_layer = tf.keras.layers.Conv1D(filters = residual_channels, kernel_size = initial_kernel, padding = 'valid')(inputs); # current_layer.shape = (batch, new_length, residual_channels)
   outputs = list();
   for layer_index, dilation in enumerate(dilations):
     if use_glob_cond:
@@ -96,14 +95,13 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
     out_skip = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - x[1]:, :])([gated_activation, output_width]);
     skip_constribution = tf.keras.layers.Dense(units = skip_channels)(out_skip); # skip_construction.shape = (batch, new_length, skip_channels)
     input_batch = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - tf.shape(x[1])[1]:, :])([current_layer, transformed]);
-    current_layer = tf.keras.layers.Add()([input_batch, transformed]); # results.shape = (batch, new_length, residual_channels)
+    current_layer = tf.keras.layers.Add()([input_batch, transformed]); # current_layer.shape = (batch, new_length, residual_channels)
     outputs.append(skip_constribution);
   total = tf.keras.layers.Add()(outputs); # total.shape = (batch, new_length, skip_channels);
   transformed1 = tf.keras.layers.ReLU()(total);
   conv1 = tf.keras.layers.Dense(units = skip_channels)(transformed1); # conv1.shape = (batch, new_length, skip_channels)
   transformed2 = tf.keras.layers.ReLU()(conv1);
   raw_output = tf.keras.layers.Dense(units = quantization_channels)(transformed2); # raw_output.shape = (batch, new_length, quantization_channels)
-  #raw_output = tf.keras.layers.Lambda(lambda x: x[:, tf.shape(x)[1] - 1:, :])(raw_output);
   # 3) output
   outputs = tf.keras.layers.Softmax(axis = -1)(raw_output);
   if use_glob_cond:
