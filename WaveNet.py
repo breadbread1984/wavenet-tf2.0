@@ -103,7 +103,7 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
   conv1 = tf.keras.layers.Dense(units = skip_channels)(transformed1); # conv1.shape = (batch, new_length, skip_channels)
   transformed2 = tf.keras.layers.ReLU()(conv1);
   raw_output = tf.keras.layers.Dense(units = quantization_channels)(transformed2); # raw_output.shape = (batch, new_length, quantization_channels)
-  raw_output = tf.keras.layers.Lambda(lambda x: tf.squeeze(x[:, tf.shape(x)[1] - 1:, :], axis = 1))(raw_output);
+  #raw_output = tf.keras.layers.Lambda(lambda x: x[:, tf.shape(x)[1] - 1:, :])(raw_output);
   # 3) output
   outputs = tf.keras.layers.Softmax(axis = -1)(raw_output);
   if use_glob_cond:
@@ -116,7 +116,7 @@ if __name__ == "__main__":
   assert tf.executing_eagerly();
   wavenet = WaveNet(use_glob_cond = True, glob_cls_num = 100, glob_embed_dim = 5);
   import numpy as np;
-  inputs = tf.constant(np.random.randint(low = 0, high = 256, size = (32,calculate_receptive_field([2**i for i in range(10)] * 5) + 100,1)), dtype = tf.float32);
+  inputs = tf.constant(np.random.randint(low = 0, high = 256, size = (32,calculate_receptive_field([2**i for i in range(10)] * 5) + 100 - 1,1)), dtype = tf.float32);
   gc = tf.constant(np.random.randint(low = 0, high = 100, size = (32, 1)), tf.float32);
   outputs = wavenet([inputs, gc]);
   print(inputs.shape)
