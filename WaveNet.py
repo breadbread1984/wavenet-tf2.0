@@ -66,15 +66,13 @@ class GCConv1D(tf.keras.layers.Layer):
   def from_config(cls, config):
     return cls(config['filters'], config['kernel_size'], config['use_bias'], config['padding'], config['stride'], config['dilation'], config['activation']);
 
-def calculate_receptive_field(dilations, kernel_size = 2, initial_kernel = 32):
+def calculate_receptive_field(dilations = [2**i for i in range(10)] * 5, kernel_size = 2, initial_kernel = 32):
 
   receptive_field = (kernel_size - 1) * sum(dilations) + 1;
   receptive_field += initial_kernel - 1;
   return receptive_field;
 
-def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilation_channels = 32, skip_channels = 512, quantization_channels = 256, use_glob_cond = False, glob_cls_num = None, glob_embed_dim = None):
-
-  dilations = [2**i for i in range(10)] * 5;
+def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilation_channels = 32, skip_channels = 512, quantization_channels = 256, dilations = [2**i for i in range(10)] * 5, use_glob_cond = False, glob_cls_num = None, glob_embed_dim = None):
 
   # 1) embed_gc
   if use_glob_cond:
@@ -108,6 +106,7 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
   conv1 = tf.keras.layers.Dense(units = skip_channels)(transformed1); # conv1.shape = (batch, new_length, skip_channels)
   transformed2 = tf.keras.layers.ReLU()(conv1);
   raw_output = tf.keras.layers.Dense(units = quantization_channels)(transformed2); # raw_output.shape = (batch, new_length, quantization_channels)
+  raw_output = tf.keras.layers.Lambda(lambda x: tf.squeeze(x[:,tf.shape(x)[1] - 1:,:], axis = 1))(raw_output);
   # 3) output
   outputs = tf.keras.layers.Softmax(axis = -1)(raw_output);
   if use_glob_cond:
@@ -117,15 +116,15 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
 
 if __name__ == "__main__":
 
-    assert tf.executing_eagerly();
-    wavenet = WaveNet(use_glob_cond = True, glob_cls_num = 100, glob_embed_dim = 5);
-    import numpy as np;
-    inputs = tf.constant(np.random.randint(low = 0, high = 256, size = (32,calculate_receptive_field([2**i for i in range(10)] * 5) + 100,1)), dtype = tf.float32);
-    gc = tf.constant(np.random.randint(low = 0, high = 100, size = (32, 1)), tf.float32);
-    outputs = wavenet([inputs, gc]);
-    print(inputs.shape)
-    print(outputs.shape)
-    wavenet.save('wavenet.h5');
-    tf.keras.utils.plot_model(model = wavenet, to_file = 'wavenet.png', show_shapes = True, dpi = 64);
-    wavenet = tf.keras.models.load_model('wavenet.h5', compile = False, custom_objects = {'GCConv1D': GCConv1D});
-    outputs = wavenet([inputs, gc]);
+  assert tf.executing_eagerly();
+  wavenet = WaveNet(use_glob_cond = True, glob_cls_num = 100, glob_embed_dim = 5);
+  import numpy as np;
+  inputs = tf.constant(np.random.randint(low = 0, high = 256, size = (32,calculate_receptive_field([2**i for i in range(10)] * 5) + 100,1)), dtype = tf.float32);
+  gc = tf.constant(np.random.randint(low = 0, high = 100, size = (32, 1)), tf.float32);
+  outputs = wavenet([inputs, gc]);
+  print(inputs.shape)
+  print(outputs.shape)
+  wavenet.save('wavenet.h5');
+  tf.keras.utils.plot_model(model = wavenet, to_file = 'wavenet.png', show_shapes = True, dpi = 64);
+  wavenet = tf.keras.models.load_model('wavenet.h5', compile = False, custom_objects = {'GCConv1D': GCConv1D});
+  outputs = wavenet([inputs, gc]);
