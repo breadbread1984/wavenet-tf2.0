@@ -55,7 +55,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       result = search(r'p([0-9]+)_([0-9]+)\.wav', f);
       if result is None: continue;
       if False == exists(join(root_dir, 'txt', d, splitext(f)[0] + ".txt")):
-        print("can't find corresponding label file!");
+        print("can't find corresponding label file " + join(root_dir, 'txt', d, splitext(f)[0] + ".txt"));
         continue;
       audiolist.append((join(root_dir, 'wav48', d, f), join(root_dir, 'txt', d, splitext(f)[0] + ".txt"), result[1], result[2]));
   shuffle(audiolist);
