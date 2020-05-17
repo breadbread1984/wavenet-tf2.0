@@ -49,7 +49,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
 
   from WaveNet import calculate_receptive_field;
   receptive_field = calculate_receptive_field(dilations, 2, 32);
-  filelist = list();
+  audiolist = list();
   for d in listdir(join(root_dir, 'wav48')):
     for f in listdir(join(root_dir, 'wav48', d)):
       result = search(r'p([0-9]+)_([0-9]+)\.wav', f);
@@ -57,8 +57,8 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       if False == exists(join(root_dir, 'txt', d, splitext(f)[0] + ".txt")):
         print("can't find corresponding label file!");
         continue;
-      filelist.append((join(root_dir, 'wav48', d, f), join(root_dir, 'txt', d, splitext(f)[0] + ".txt"), result[1], result[2]));
-  shuffle(filelist);
+      audiolist.append((join(root_dir, 'wav48', d, f), join(root_dir, 'txt', d, splitext(f)[0] + ".txt"), result[1], result[2]));
+  shuffle(audiolist);
   category = dict(); # person_id -> class id
   count = 0;
   if False == exists('dataset'): mkdir('dataset');
