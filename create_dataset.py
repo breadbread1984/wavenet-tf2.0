@@ -72,7 +72,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
     label_path = f[1];
     label = open(label_path, 'r');
     if label is None:
-      print("can't open label file!");
+      print("can't open label file " + label_path);
       continue;
     transcript = label.read().strip();
     label.close();
