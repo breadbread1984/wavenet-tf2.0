@@ -4,6 +4,7 @@ import sys;
 from os import listdir, mkdir;
 from os.path import join, exists, splitext;
 from re import search;
+from random import shuffle;
 import librosa;
 import pandas as pd;
 import numpy as np;
@@ -48,10 +49,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
 
   from WaveNet import calculate_receptive_field;
   receptive_field = calculate_receptive_field(dilations, 2, 32);
-  category = dict(); # person_id -> class id
-  count = 0;
-  if False == exists('dataset'): mkdir('dataset');
-  writer = tf.io.TFRecordWriter(join('dataset', 'trainset.tfrecord'));
+  filelist = list();
   for d in listdir(join(root_dir, 'wav48')):
     for f in listdir(join(root_dir, 'wav48', d)):
       result = search(r'p([0-9]+)_([0-9]+)\.wav', f);
@@ -59,44 +57,51 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       if False == exists(join(root_dir, 'txt', d, splitext(f)[0] + ".txt")):
         print("can't find corresponding label file!");
         continue;
-      # 1) load audio file
-      audio_path = join(root_dir, 'wav48', d, f);
-      audio, _ = librosa.load(audio_path, sr = sample_rate, mono=True);
-      audio = audio.reshape(-1, 1);
-      # 2) load label file
-      label_path = join(root_dir, 'txt', d, splitext(f)[0] + ".txt");
-      label = open(label_path, 'r');
-      if label is None:
-        print("can't open label file!");
-        continue;
-      transcript = label.read().strip();
-      label.close();
-      person_id = int(result[1]);
-      record_id = int(result[2]);
-      if person_id not in category:
-        category[person_id] = count;
-        count += 1;
-      # 3) trim silence under specific signal to noise ratio
-      frame_length = 2048 if audio.size >= 2048 else audio.size;
-      energe = librosa.feature.rms(audio, frame_length = frame_length);
-      frames = np.nonzero(energe > silence_threshold);
-      indices = librosa.core.frames_to_samples(frames)[1];
-      audio = audio[indices[0]:indices[-1]] if indices.size else audio[0:0];
-      audio = audio.reshape(-1, 1);
-      # 4) pad at head
-      audio = np.pad(audio, [[receptive_field, 0],[0, 0]], 'constant');
-      # 5) quantization 
-      quantized = mu_law_encode(audio, quantization_channels); # quantized.shape(length, 256)
-      # 6) write to file
-      trainsample = tf.train.Example(features = tf.train.Features(
-        feature = {
-          'audio': tf.train.Feature(int64_list = tf.train.Int64List(value = tf.reshape(quantized, (-1,)))),
-          'length': tf.train.Feature(int64_list = tf.train.Int64List(value = [quantized.shape[0]])),
-          'category': tf.train.Feature(int64_list = tf.train.Int64List(value = [category[person_id]])),
-          'transcript': tf.train.Feature(bytes_list = tf.train.BytesList(value = [transcript.encode('utf-8')]))
-        }
-      ));
-      writer.write(trainsample.SerializeToString());
+      filelist.append((join(root_dir, 'wav48', d, f), join(root_dir, 'txt', d, splitext(f)[0] + ".txt"), result[1], result[2]));
+  shuffle(filelist);
+  category = dict(); # person_id -> class id
+  count = 0;
+  if False == exists('dataset'): mkdir('dataset');
+  writer = tf.io.TFRecordWriter(join('dataset', 'trainset.tfrecord'));
+  for f in audiolist:
+    # 1) load audio file
+    audio_path = f[0];
+    audio, _ = librosa.load(audio_path, sr = sample_rate, mono=True);
+    audio = audio.reshape(-1, 1);
+    # 2) load label file
+    label_path = f[1];
+    label = open(label_path, 'r');
+    if label is None:
+      print("can't open label file!");
+      continue;
+    transcript = label.read().strip();
+    label.close();
+    person_id = int(f[2]);
+    record_id = int(f[3]);
+    if person_id not in category:
+      category[person_id] = count;
+      count += 1;
+    # 3) trim silence under specific signal to noise ratio
+    frame_length = 2048 if audio.size >= 2048 else audio.size;
+    energe = librosa.feature.rms(audio, frame_length = frame_length);
+    frames = np.nonzero(energe > silence_threshold);
+    indices = librosa.core.frames_to_samples(frames)[1];
+    audio = audio[indices[0]:indices[-1]] if indices.size else audio[0:0];
+    audio = audio.reshape(-1, 1);
+    # 4) pad at head
+    audio = np.pad(audio, [[receptive_field, 0],[0, 0]], 'constant');
+    # 5) quantization 
+    quantized = mu_law_encode(audio, quantization_channels); # quantized.shape(length, 256)
+    # 6) write to file
+    trainsample = tf.train.Example(features = tf.train.Features(
+      feature = {
+        'audio': tf.train.Feature(int64_list = tf.train.Int64List(value = tf.reshape(quantized, (-1,)))),
+        'length': tf.train.Feature(int64_list = tf.train.Int64List(value = [quantized.shape[0]])),
+        'category': tf.train.Feature(int64_list = tf.train.Int64List(value = [category[person_id]])),
+        'transcript': tf.train.Feature(bytes_list = tf.train.BytesList(value = [transcript.encode('utf-8')]))
+      }
+    ));
+    writer.write(trainsample.SerializeToString());
   writer.close();
   category = [(class_id, person_id) for person_id, class_id in category.items()];
   category = pd.DateFrame(category, columns = ['class_id', 'person_id']);
