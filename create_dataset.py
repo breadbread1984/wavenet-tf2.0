@@ -24,6 +24,24 @@ def mu_law_decode(output, quantization_channels = 256):
   magnitude = (1 / mu) * ((1 + mu) ** tf.math.abs(signal) - 1);
   return tf.sign(signal) * magnitude;
 
+def parse_function(serialized_example):
+
+  feature = tf.io.parse_single_example(
+    serialized_example,
+    features = {
+      'audio': tf.io.VarLenFeature(dtype = tf.int32),
+      'length': tf.io.FixedLenFeature((), dtype = tf.int32),
+      'category': tf.io.FixedLenFeature((), dtype = tf.int32),
+      'transcript': tf.io.FixedLenFeature((), dtype = tf.string)
+    }
+  );
+  length = features['length'];
+  audio = tf.sparse.to_dense(features['audio'], default_value = 0);
+  audio = tf.reshape(audio, (length, 256));
+  category = features['category'];
+  transcript = features['transcript'].decode('utf-8');
+  return audio, category;
+
 def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2**i for i in range(10)] * 5, quantization_channels = 256):
 
   from WaveNet import calculate_receptive_field;
@@ -71,6 +89,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       trainsample = tf.train.Example(features = tf.train.Features(
         feature = {
           'audio': tf.train.Feature(int64_list = tf.train.Int64List(value = tf.reshape(quantized, (-1,)))),
+          'length': tf.train.Feature(int64_list = tf.train.Int64List(value = [quantized.shape[0]])),
           'category': tf.train.Feature(int64_list = tf.train.Int64List(value = [category[person_id]])),
           'transcript': tf.train.Feature(bytes_list = tf.train.BytesList(value = [transcript.encode('utf-8')]))
         }
