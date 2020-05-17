@@ -8,8 +8,10 @@ import librosa;
 import numpy as np;
 import tensorflow as tf;
 
-def main(root_dir, sample_rate = 16000, silence_threshold = 0.3):
+def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilation_rate = ):
 
+  category = dict(); # person_id -> class id
+  count = 0;
   for d in listdir(join(root_dir, 'wav48')):
     for f in listdir(join(root_dir, 'wav48', d)):
       result = search(r'p([0-9]+)_([0-9]+)\.wav', f);
@@ -31,13 +33,18 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3):
       label.close();
       person_id = int(result[1]);
       record_id = int(result[2]);
+      if person_id not in category: category[person_id] = count;
+      count += 1;
       # 3) trim silence under specific signal to noise ratio
       frame_length = 2048 if audio.size >= 2048 else audio.size;
       energe = librosa.feature.rmse(audio, frame_length = frame_length);
       frames = np.nonzero(energe > threshold);
       indices = librosa.core.frames_to_samples(frames)[1];
       audio = audio[indices[0]:indices[-1]] if indices.size else audio[0:0];
+      audio = audio.reshape(-1, 1);
+      audio = np.pad(audio, [[],[0,0]], 'constant');
       # TODO
+  print("cardinality is %f" % (len(category)));
 
 if __name__ == "__main__":
 
