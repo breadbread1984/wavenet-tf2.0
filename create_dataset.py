@@ -70,7 +70,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       # 6) write to file
       trainsample = tf.train.Example(features = tf.train.Features(
         feature = {
-          'audio': tf.train.Feature(int64_list = tf.train.Int64List(value = quantized.reshape(-1))),
+          'audio': tf.train.Feature(int64_list = tf.train.Int64List(value = tf.reshape(quantized, (-1,)))),
           'category': tf.train.Feature(int64_list = tf.train.Int64List(value = [category[person_id]])),
           'transcript': tf.train.Feature(bytes_list = tf.train.BytesList(value = [transcript.encode('utf-8')]))
         }
