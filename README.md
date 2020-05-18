@@ -20,3 +20,13 @@ train wavenet with the following command
 ```bash
 python3 train.py
 ```
+
+## sample audio
+
+sample audio of person id with
+
+```bash
+python3 Sampler.py <person_id>
+```
+
+the script will generate a wave file. listen the wave file to verify yourself.
