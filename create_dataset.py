@@ -5,6 +5,8 @@ from os import listdir, mkdir;
 from os.path import join, exists, splitext;
 from re import search;
 from random import shuffle;
+from threading import Thread, Lock;
+import concurrent;
 import librosa;
 import pandas as pd;
 import numpy as np;
@@ -63,7 +65,9 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
   count = 0;
   if False == exists('dataset'): mkdir('dataset');
   writer = tf.io.TFRecordWriter(join('dataset', 'trainset.tfrecord'));
-  for f in audiolist:
+  mutex = Lock();
+  # thread function
+  def process(f):
     # 1) load audio file
     audio_path = f[0];
     audio, _ = librosa.load(audio_path, sr = sample_rate, mono=True);
@@ -101,10 +105,16 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
         'transcript': tf.train.Feature(bytes_list = tf.train.BytesList(value = [transcript.encode('utf-8')]))
       }
     ));
+    mutex.acquire();
     writer.write(trainsample.SerializeToString());
+    mutex.release();
+  # process with multiple threads
+  with concurrent.futures.ThreadPoolExecutor(32) as executor:
+    for f in audiolist:
+      executor.submit(process, f);
   writer.close();
   category = [(class_id, person_id) for person_id, class_id in category.items()];
-  category = pd.DateFrame(category, columns = ['class_id', 'person_id']);
+  category = pd.DataFrame(category, columns = ['class_id', 'person_id']);
   category.to_pickle('category.pkl');
   category.to_excel('category.xls');
 
