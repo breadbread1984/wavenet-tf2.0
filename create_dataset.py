@@ -112,6 +112,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
   with concurrent.futures.ThreadPoolExecutor(32) as executor:
     for f in audiolist:
       executor.submit(process, f, writer);
+  print('completed!');
   writer.close();
   category = [(class_id, person_id) for person_id, class_id in category.items()];
   category = pd.DataFrame(category, columns = ['class_id', 'person_id']);
