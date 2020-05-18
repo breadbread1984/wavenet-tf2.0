@@ -5,7 +5,7 @@ from os.path import exists, join;
 import librosa;
 import pandas as pd;
 import tensorflow as tf;
-from WaveNet import calculate_receptive_field;
+from WaveNet import GCConv1D, calculate_receptive_field;
 from create_dateset import mu_law_decode;
 
 class Sampler(object):
@@ -13,7 +13,7 @@ class Sampler(object):
   def __init__(self, ):
 
     if exists(join('model', 'wavenet.h5')):
-      self.wavenet = tf.keras.models.load_model(join('model', 'wavenet.h5'));
+      self.wavenet = tf.keras.models.load_model(join('model', 'wavenet.h5'), compile = False, custom_objects = {'GCConv1D': GCConv1D});
     else:
       raise 'train the wavenet first before sampling audios';
     self.receptive_field = calculate_receptive_field();
