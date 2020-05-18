@@ -91,11 +91,13 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
       activation = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'tanh', padding = 'valid')(current_layer);
       gate = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'sigmoid', padding = 'valid')(current_layer);
     gated_activation = tf.keras.layers.Multiply()([activation, gate]);
+    # feed forward branch
     transformed = tf.keras.layers.Dense(units = residual_channels)(gated_activation); # transformed.shape = (batch, new_length, residual_channels)
-    out_skip = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - x[1]:, :])([gated_activation, output_width]);
-    skip_constribution = tf.keras.layers.Dense(units = skip_channels)(out_skip); # skip_construction.shape = (batch, new_length, skip_channels)
     input_batch = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - tf.shape(x[1])[1]:, :])([current_layer, transformed]);
     current_layer = tf.keras.layers.Add()([input_batch, transformed]); # current_layer.shape = (batch, new_length, residual_channels)
+    # output branch
+    out_skip = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - x[1]:, :])([gated_activation, output_width]);
+    skip_constribution = tf.keras.layers.Dense(units = skip_channels)(out_skip); # skip_construction.shape = (batch, new_length, skip_channels)
     outputs.append(skip_constribution);
   total = tf.keras.layers.Add()(outputs); # total.shape = (batch, new_length, skip_channels);
   transformed1 = tf.keras.layers.ReLU()(total);
