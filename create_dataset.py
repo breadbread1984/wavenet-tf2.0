@@ -77,7 +77,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
     label = open(label_path, 'r');
     if label is None:
       print("can't open label file " + label_path);
-      continue;
+      return;
     transcript = label.read().strip();
     label.close();
     person_id = int(f[2]);
