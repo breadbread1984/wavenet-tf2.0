@@ -109,10 +109,15 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
     writer.write(trainsample.SerializeToString());
     mutex.release();
   # process with multiple threads
-  with concurrent.futures.ThreadPoolExecutor(32) as executor:
+  handlers = list();
+  with concurrent.futures.ThreadPoolExecutor(max_workers = 32) as executor:
     for f in audiolist:
-      executor.submit(process, f, writer);
-  print('completed!');
+      handler = executor.submit(process, f, writer);
+      handlers.append(handler);
+  for handler in handlers:
+    if False == handler.done():
+      print('thread failed!');
+  print('completed');
   writer.close();
   category = [(class_id, person_id) for person_id, class_id in category.items()];
   category = pd.DataFrame(category, columns = ['class_id', 'person_id']);
