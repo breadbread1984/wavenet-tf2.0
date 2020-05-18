@@ -51,6 +51,8 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
 
   from WaveNet import calculate_receptive_field;
   receptive_field = calculate_receptive_field(dilations, 2, 32);
+  category = dict(); # person_id -> class id
+  count = 0;
   audiolist = list();
   for d in listdir(join(root_dir, 'wav48')):
     for f in listdir(join(root_dir, 'wav48', d)):
@@ -59,10 +61,11 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       if False == exists(join(root_dir, 'txt', d, splitext(f)[0] + ".txt")):
         print("can't find corresponding label file " + join(root_dir, 'txt', d, splitext(f)[0] + ".txt"));
         continue;
-      audiolist.append((join(root_dir, 'wav48', d, f), join(root_dir, 'txt', d, splitext(f)[0] + ".txt"), result[1], result[2]));
+      if result[1] not in category:
+        category[result[1]] = count;
+        count += 1;
+      audiolist.append((join(root_dir, 'wav48', d, f), join(root_dir, 'txt', d, splitext(f)[0] + ".txt"), category[result[1]]));
   shuffle(audiolist);
-  category = dict(); # person_id -> class id
-  count = 0;
   if False == exists('dataset'): mkdir('dataset');
   writer = tf.io.TFRecordWriter(join('dataset', 'trainset.tfrecord'));
   mutex = Lock();
@@ -80,11 +83,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       return;
     transcript = label.read().strip();
     label.close();
-    person_id = int(f[2]);
-    record_id = int(f[3]);
-    if person_id not in category:
-      category[person_id] = count;
-      count += 1;
+    class_id = int(f[2]);
     # 3) trim silence under specific signal to noise ratio
     frame_length = 2048 if audio.size >= 2048 else audio.size;
     energe = librosa.feature.rms(audio, frame_length = frame_length);
@@ -101,7 +100,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
       feature = {
         'audio': tf.train.Feature(int64_list = tf.train.Int64List(value = tf.reshape(quantized, (-1,)))),
         'length': tf.train.Feature(int64_list = tf.train.Int64List(value = [quantized.shape[0]])),
-        'category': tf.train.Feature(int64_list = tf.train.Int64List(value = [category[person_id]])),
+        'category': tf.train.Feature(int64_list = tf.train.Int64List(value = [class_id])),
         'transcript': tf.train.Feature(bytes_list = tf.train.BytesList(value = [transcript.encode('utf-8')]))
       }
     ));
