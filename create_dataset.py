@@ -68,9 +68,8 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
   shuffle(audiolist);
   if False == exists('dataset'): mkdir('dataset');
   writer = tf.io.TFRecordWriter(join('dataset', 'trainset.tfrecord'));
-  mutex = Lock();
-  # thread function
-  def process(f, writer):
+  # NOTE: we tried using multithreading, but the speed is even slower
+  for f in audiolist:
     # 1) load audio file
     audio_path = f[0];
     audio, _ = librosa.load(audio_path, sr = sample_rate, mono=True);
@@ -104,19 +103,7 @@ def main(root_dir, sample_rate = 16000, silence_threshold = 0.3, dilations = [2*
         'transcript': tf.train.Feature(bytes_list = tf.train.BytesList(value = [transcript.encode('utf-8')]))
       }
     ));
-    mutex.acquire();
     writer.write(trainsample.SerializeToString());
-    mutex.release();
-  # process with multiple threads
-  handlers = list();
-  with concurrent.futures.ThreadPoolExecutor(max_workers = 32) as executor:
-    for f in audiolist:
-      handler = executor.submit(process, f, writer);
-      handlers.append(handler);
-  for handler in handlers:
-    if False == handler.done():
-      print('thread failed!');
-  print('completed');
   writer.close();
   category = [(class_id, person_id) for person_id, class_id in category.items()];
   category = pd.DataFrame(category, columns = ['class_id', 'person_id']);
