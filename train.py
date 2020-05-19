@@ -4,7 +4,7 @@ from os import mkdir;
 from os.path import join, exists;
 import tensorflow as tf;
 import pandas as pd;
-from WaveNet import WaveNet;
+from WaveNet import WaveNet, calculate_receptive_field;
 from create_dataset import parse_function_generator;
 
 batch_size = 8;

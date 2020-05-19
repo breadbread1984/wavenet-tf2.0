@@ -33,17 +33,17 @@ def parse_function_generator(quantization_channels = 256):
     feature = tf.io.parse_single_example(
       serialized_example,
       features = {
-        'audio': tf.io.VarLenFeature(dtype = tf.int32),
-        'length': tf.io.FixedLenFeature((), dtype = tf.int32),
-        'category': tf.io.FixedLenFeature((), dtype = tf.int32),
+        'audio': tf.io.VarLenFeature(dtype = tf.int64),
+        'length': tf.io.FixedLenFeature((), dtype = tf.int64),
+        'category': tf.io.FixedLenFeature((), dtype = tf.int64),
         'transcript': tf.io.FixedLenFeature((), dtype = tf.string)
       }
     );
-    length = features['length'];
-    audio = tf.sparse.to_dense(features['audio'], default_value = 0);
-    audio = tf.reshape(audio, (length, quantization_channels));
-    category = features['category'];
-    transcript = features['transcript'].decode('utf-8');
+    length = feature['length'];
+    audio = tf.sparse.to_dense(feature['audio'], default_value = 0);
+    audio = tf.cast(tf.reshape(audio, (length, quantization_channels)), dtype = tf.float32);
+    category = tf.cast(feature['category'], dtype = tf.float32);
+    transcript = tf.strings.unicode_decode(feature['transcript'],'UTF-8');
     return audio, category;
   return parse_function;
 
