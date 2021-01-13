@@ -8,11 +8,11 @@ def GlobalConditionalConv1D(channel, glob_embed_dim, filters = 32, kernel_size =
   inputs = tf.keras.Input((None, channel)); # inputs1.shape = (batch, length, channel);
   condition = tf.keras.Input((1, glob_embed_dim)); # inputs2.shape = (batch, 1, glob_embed_dim);
   results = tf.keras.layers.Conv1D(filters = filters, kernel_size = kernel_size, padding = 'valid', dilation_rate = dilation)(inputs); # results1.shape = (batch, length, filters)
-  condition = tf.keras.layers.Conv1D(filters = filters, kernel_size = 1, padding = 'same')(condition); # results2.shape = (batch, 1, filters)
-  results = tf.keras.layers.Lambda(lambda x: x[0] + x[1])([results, condition]); # results.shape = (batch, length, filters)
+  cond_results = tf.keras.layers.Conv1D(filters = filters, kernel_size = 1, padding = 'same')(condition); # results2.shape = (batch, 1, filters)
+  results = tf.keras.layers.Lambda(lambda x: x[0] + x[1])([results, cond_results]); # results.shape = (batch, length, filters)
   if activation is not None:
     results = tf.keras.layers.Activation(activation)(results);
-  return tf.keras.Model(inputs = (inputs1, inputs2), outputs = results);
+  return tf.keras.Model(inputs = (inputs, condition), outputs = results);
 
 def calculate_receptive_field(dilations = [2**i for i in range(10)] * 5, kernel_size = 2, initial_kernel = 32):
 
@@ -31,21 +31,21 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
   inputs = tf.keras.Input((None, 1)); # inputs.shape = (batch, length, 1)
   # calculate how long the output is, given the length of input
   output_width = tf.keras.layers.Lambda(lambda x, r: tf.shape(x)[1] - r + 1, arguments = {'r': calculate_receptive_field(dilations, kernel_size, initial_kernel)})(inputs);
-  current_layer = tf.keras.layers.Conv1D(filters = residual_channels, kernel_size = initial_kernel, padding = 'valid')(inputs); # current_layer.shape = (batch, new_length, residual_channels)
+  current_layer = tf.keras.layers.Conv1D(filters = residual_channels, kernel_size = initial_kernel, padding = 'valid')(inputs); # current_layer.shape = (batch, length, residual_channels)
   outputs = list();
   for layer_index, dilation in enumerate(dilations):
     # NOTE: out length = in length - dilation * (kernel size - 1)
     if use_glob_cond:
-      activation = GlobalConditionalConv1D(channel = current_layer.shape[-1], glob_embed_dim = glob_embed_dim, filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'tanh')([current_layer, glob_embed]); # activation.shape = (batch, new_length, dilation_channels)
-      gate = GlobalConditionalConv1D(channel = current_layer.shape[-1], glob_embed_dim = glob_embed_dim, filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'sigmoid')([current_layer, glob_embed]); # gate.shape = (batch, new_length, dilation_channels)
+      activation = GlobalConditionalConv1D(channel = current_layer.shape[-1], glob_embed_dim = glob_embed_dim, filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'tanh')([current_layer, glob_embed]); # activation.shape = (batch, length - dilation * (kernel size - 1), dilation_channels)
+      gate = GlobalConditionalConv1D(channel = current_layer.shape[-1], glob_embed_dim = glob_embed_dim, filters = dilation_channels, kernel_size = kernel_size, dilation = dilation, activation = 'sigmoid')([current_layer, glob_embed]); # gate.shape = (batch, length - dilation * (kernel size - 1), dilation_channels)
     else:
-      activation = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'tanh', padding = 'valid')(current_layer);
-      gate = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'sigmoid', padding = 'valid')(current_layer);
-    gated_activation = tf.keras.layers.Multiply()([activation, gate]);
+      activation = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'tanh', padding = 'valid')(current_layer); # activation.shape = (batch, length - dilation * (kernel size - 1), dilation_channel)
+      gate = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'sigmoid', padding = 'valid')(current_layer); # activation.shape = (batch, length - dilation * (kernel size - 1), dilation_channel)
+    gated_activation = tf.keras.layers.Multiply()([activation, gate]); # gated_activation.shape = (batch, length - dilation * (kernel size - 1), dilation_channel)
     # feed forward branch
-    transformed = tf.keras.layers.Dense(units = residual_channels)(gated_activation); # transformed.shape = (batch, new_length, residual_channels)
-    input_batch = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - tf.shape(x[1])[1]:, :])([current_layer, transformed]);
-    current_layer = tf.keras.layers.Add()([input_batch, transformed]); # current_layer.shape = (batch, new_length, residual_channels)
+    transformed = tf.keras.layers.Dense(units = residual_channels)(gated_activation); # transformed.shape = (batch, length - dilation * (kernel size - 1), residual_channels)
+    input_batch = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - tf.shape(x[1])[1]:, :])([current_layer, transformed]); # input_batch.shape = (batch, dilation * (kernel size - 1), residual_channels)
+    current_layer = tf.keras.layers.Add()([input_batch, transformed]); # current_layer.shape = (batch, dilation * (kernel size - 1), residual_channels)
     # output branch
     out_skip = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - x[1]:, :])([gated_activation, output_width]);
     skip_constribution = tf.keras.layers.Dense(units = skip_channels)(out_skip); # skip_construction.shape = (batch, new_length, skip_channels)
