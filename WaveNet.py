@@ -42,12 +42,12 @@ def WaveNet(initial_kernel = 32, kernel_size = 2, residual_channels = 32, dilati
       activation = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'tanh', padding = 'valid')(current_layer); # activation.shape = (batch, length - dilation * (kernel size - 1), dilation_channel)
       gate = tf.keras.layers.Conv1D(filters = dilation_channels, kernel_size = kernel_size, dilation_rate = dilation, activation = 'sigmoid', padding = 'valid')(current_layer); # activation.shape = (batch, length - dilation * (kernel size - 1), dilation_channel)
     gated_activation = tf.keras.layers.Multiply()([activation, gate]); # gated_activation.shape = (batch, length - dilation * (kernel size - 1), dilation_channel)
-    # feed forward branch
+    # 1) feed forward output + shortened original input
     transformed = tf.keras.layers.Dense(units = residual_channels)(gated_activation); # transformed.shape = (batch, length - dilation * (kernel size - 1), residual_channels)
-    input_batch = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - tf.shape(x[1])[1]:, :])([current_layer, transformed]); # input_batch.shape = (batch, dilation * (kernel size - 1), residual_channels)
-    current_layer = tf.keras.layers.Add()([input_batch, transformed]); # current_layer.shape = (batch, dilation * (kernel size - 1), residual_channels)
-    # output branch
-    out_skip = tf.keras.layers.Lambda(lambda x: x[0][:, tf.shape(x[0])[1] - x[1]:, :])([gated_activation, output_width]);
+    shortened_current_layer = tf.keras.layers.Lambda(lambda x: x[0][:, -tf.shape(x[1])[1]:, :])([current_layer, transformed]); # shortened_current_layer.shape = (batch, length - dilation * (kernel size - 1), residual_channels)
+    current_layer = tf.keras.layers.Add()([shortened_current_layer, transformed]); # current_layer.shape = (batch, length - dilation * (kernel size - 1), residual_channels)
+    # 2) output branch
+    out_skip = tf.keras.layers.Lambda(lambda x: x[0][:, -x[1]:, :])([gated_activation, output_width]);
     skip_constribution = tf.keras.layers.Dense(units = skip_channels)(out_skip); # skip_construction.shape = (batch, new_length, skip_channels)
     outputs.append(skip_constribution);
   total = tf.keras.layers.Add()(outputs); # total.shape = (batch, new_length, skip_channels);
